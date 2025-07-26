@@ -3,6 +3,7 @@ package main;
 
 import (
 	"fmt"
+	"regexp"
 	 tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/leogem2003/directchan"
@@ -19,7 +20,23 @@ func operationValidator(input string) error {
 	if input != "o" && input != "a" {
 		return fmt.Errorf("Invalid input: expected o|a, got %s", input)
 	}
-	return fmt.Errorf("error");
+	return nil;
+}
+
+func addressValidator(input string) error {
+	if res, _ := regexp.MatchString("^wss?://[a-z]+", input); res {
+		return nil
+	}
+
+	return fmt.Errorf("Invalid input url: %s", input)
+}
+
+func nonEmptyValidator(input string) error {
+	if input == "" {
+		return fmt.Errorf("Expected input")
+	}
+
+	return nil
 }
 
 const (
@@ -32,13 +49,21 @@ const (
 func initialLogin() loginModel {
 	inputs := make([]textinput.Model, 4)
 	ipInput := textinput.New()
+	ipInput.Validate = addressValidator
+	ipInput.Width = 20
 	ipInput.Focus()
+	ipInput.Placeholder = "ws://<hostname>"
+
 	keyInput := textinput.New()
+	keyInput.Validate = nonEmptyValidator
+
 	role := textinput.New()
 	role.Validate = operationValidator
+	role.Width = 20
 	role.Placeholder = "[o]ffer | [a]nswer"
 
 	name := textinput.New()
+	name.Validate = nonEmptyValidator
 
 	inputs[ipIndex] = ipInput
 	inputs[keyIndex] = keyInput
@@ -82,13 +107,16 @@ func createConnection(host string, key string, role string, name string) (tea.Mo
 
 func (l loginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds := make([]tea.Cmd, len(l.inputs))	
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyEnter:
-			l.inputs[l.focusedIndex].Blur()
-			l.focusedIndex++
+			err := l.inputs[l.focusedIndex].Err
+			l.err = err
+			if err == nil {
+				l.inputs[l.focusedIndex].Blur()
+				l.focusedIndex++
+			}
 			if l.focusedIndex < len(l.inputs) {
 				l.inputs[l.focusedIndex].Focus()
 			} else {
@@ -102,7 +130,7 @@ func (l loginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			return l, tea.Quit
 		}
-	case error:
+	case errMsg:
 		l.err = msg
 		return l, nil
 	}
@@ -115,12 +143,7 @@ func (l loginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (l loginModel) View() string {
-	errorMsg := ""
-	if l.err != nil {
-		errorMsg = l.err.Error()
-	}
-
-	return errorMsg + fmt.Sprintf(
+	repr := fmt.Sprintf(
 `IP:port or server address
 %s	
 Key
@@ -134,4 +157,10 @@ Name
 		l.inputs[roleIndex].View(),
 		l.inputs[nameIndex].View(),
 	) + "\n"
+	
+	if l.err != nil {
+		repr += l.err.Error() + "\n"
+	}
+
+	return repr
 }
